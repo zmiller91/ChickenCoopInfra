@@ -41,6 +41,7 @@ export class UIDeployStack extends cdk.Stack {
                 artifacts: {
                     files: [
                         'build/**/*',
+                        'public/**/*',
                         'appspec.yml',
                         'scripts/aws/*.sh'
                     ],
