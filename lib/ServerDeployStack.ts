@@ -41,10 +41,10 @@ export class ServerDeployStack extends cdk.Stack{
                     files: [
                         'target/ChickenCoop-1.0-SNAPSHOT.jar',
                         'appspec.yml',
-                        'sql/tables.sql',
+                        'sql/**/*',
                         'scripts/aws/*.sh'
                     ],
-                    'discard-paths': 'yes'
+                    'discard-paths': 'no'
                 }
             })
         })

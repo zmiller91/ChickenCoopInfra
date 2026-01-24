@@ -56,6 +56,8 @@ export class InfrastructureStack extends cdk.Stack {
 
         this.dbSecret = database.secret;
 
+
+
         dbSecurityGroup.addIngressRule(aws_ec2.Peer.ipv4(vpc.vpcCidrBlock), aws_ec2.Port.tcp(3306))
 
 
@@ -70,6 +72,24 @@ export class InfrastructureStack extends cdk.Stack {
                 resources: [database.secret.secretArn]
             }))
         }
+
+        const appDbSecret = new aws_secretsmanager.Secret(this, "ChickenCoopAppDbSecret", {
+            secretName: "app-user-creds",
+            generateSecretString: {
+                secretStringTemplate: JSON.stringify({
+                    username: "app",
+                    host: database.dbInstanceEndpointAddress,
+                    port: database.dbInstanceEndpointPort,
+                }),
+                generateStringKey: "password",
+                excludePunctuation: true,
+            },
+        });
+
+        this.ec2Role.addToPolicy(new aws_iam.PolicyStatement({
+            actions: ["secretsmanager:GetSecretValue"],
+            resources: [appDbSecret.secretArn]
+        }))
 
         const instanceProfile = new aws_iam.InstanceProfile(this, 'ChickenCoopInstanceProfile', {
             role: this.ec2Role,
