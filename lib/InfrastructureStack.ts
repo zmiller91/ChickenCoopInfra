@@ -9,6 +9,7 @@ import {
     aws_route53,
     aws_route53_targets,
     aws_secretsmanager,
+    aws_ses, Duration,
     Tags
 } from "aws-cdk-lib";
 import {Construct} from "constructs";
@@ -65,6 +66,15 @@ export class InfrastructureStack extends cdk.Stack {
         this.ec2Role = new aws_iam.Role(this, 'ChickenCoopEc2CodeDeployRole', {
             assumedBy: new aws_iam.ServicePrincipal('ec2.amazonaws.com'),
         });
+
+        this.ec2Role.addToPolicy(new aws_iam.PolicyStatement({
+            effect: aws_iam.Effect.ALLOW,
+            actions: [
+                "ses:SendEmail",
+                "ses:SendRawEmail"
+            ],
+            resources: ["*"]
+        }));
 
         if(database.secret) {
             this.ec2Role.addToPolicy(new aws_iam.PolicyStatement({
@@ -196,6 +206,64 @@ export class InfrastructureStack extends cdk.Stack {
             zone: hostedZone,
             recordName: "www",
         })
+
+
+        /**
+         * Currently everything is running under the pisprout.com domain, however I want this all to run under the
+         * gnomelyhq.com domain in the future. So this SES email verification is using the gnomelyhq.com domain.
+         *
+         * Also, these DKIM and MX records need to be added to the domain's DNS records. Currently, WordPress is
+         * the name server so these need to be manually copied to wordpress. Later we will use Route53, in which
+         * this code will work as intended.
+         */
+
+        const domain = 'gnomelyhq.com';
+
+        const zone = aws_route53.HostedZone.fromLookup(this, 'Zone', {
+            domainName: domain,
+        });
+
+        const identity = new aws_ses.EmailIdentity(this, 'SesIdentity', {
+            identity: aws_ses.Identity.domain(domain),
+            mailFromDomain: `mail.${domain}`,
+        });
+
+        // DKIM: create the 3 CNAME records SES expects
+        identity.dkimRecords.forEach((record, index) => {
+            new aws_route53.CnameRecord(this, `SesDkimRecord${index}`, {
+                zone,
+                recordName: `${record.name}._domainkey`, // relative to zone
+                domainName: record.value,
+                ttl: Duration.minutes(5),
+            });
+        });
+
+        // SPF at the root of the domain (zone apex)
+        new aws_route53.TxtRecord(this, 'SesSpfRecord', {
+            zone,
+            // recordName omitted or '' means the zone apex (gnomelyhq.com)
+            values: ['v=spf1 include:amazonses.com ~all'],
+            ttl: Duration.minutes(5),
+        });
+
+        // MAIL FROM: MX record required by SES
+        new aws_route53.MxRecord(this, 'SesMailFromMx', {
+            zone,
+            recordName: 'mail',
+            values: [{
+                hostName: 'feedback-smtp.us-east-1.amazonses.com',
+                priority: 10,
+            }],
+            ttl: Duration.minutes(5),
+        });
+
+        // MAIL FROM: SPF record (this is the important one for Return-Path)
+        new aws_route53.TxtRecord(this, 'SesMailFromSpf', {
+            zone,
+            recordName: 'mail',
+            values: ['v=spf1 include:amazonses.com -all'],
+            ttl: Duration.minutes(5),
+        });
 
     }
 }
